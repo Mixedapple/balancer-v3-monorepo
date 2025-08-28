@@ -15,7 +15,6 @@ import { HooksConfigLibMock } from "@balancer-labs/v3-vault/contracts/test/Hooks
 import { BaseContractsDeployer } from "@balancer-labs/v3-solidity-utils/test/foundry/utils/BaseContractsDeployer.sol";
 import { CREATE3 } from "@balancer-labs/v3-solidity-utils/contracts/solmate/CREATE3.sol";
 
-import { AggregatorCompositeLiquidityRouter } from "../../../contracts/AggregatorCompositeLiquidityRouter.sol";
 import { CompositeLiquidityRouterMock } from "../../../contracts/test/CompositeLiquidityRouterMock.sol";
 import { VaultFactory } from "../../../contracts/VaultFactory.sol";
 import { VaultExplorer } from "../../../contracts/VaultExplorer.sol";
@@ -25,7 +24,6 @@ import { BatchRouterMock } from "../../../contracts/test/BatchRouterMock.sol";
 import { ERC20MultiTokenMock } from "../../../contracts/test/ERC20MultiTokenMock.sol";
 import { LinearBasePoolMathMock } from "../../../contracts/test/LinearBasePoolMathMock.sol";
 import { ProtocolFeeController } from "../../../contracts/ProtocolFeeController.sol";
-import { AggregatorRouter } from "../../../contracts/AggregatorRouter.sol";
 import { VaultExtensionMock } from "../../../contracts/test/VaultExtensionMock.sol";
 import { VaultAdminMock } from "../../../contracts/test/VaultAdminMock.sol";
 import { VaultMock } from "../../../contracts/test/VaultMock.sol";
@@ -149,25 +147,6 @@ contract VaultContractsDeployer is BaseContractsDeployer {
                 );
         } else {
             return new CompositeLiquidityRouterMock(vault, weth, permit2);
-        }
-    }
-
-    function deployAggregatorCompositeLiquidityRouterMock(
-        IVault vault,
-        string memory routerVersion
-    ) internal returns (AggregatorCompositeLiquidityRouter) {
-        if (reusingArtifacts) {
-            return
-                AggregatorCompositeLiquidityRouter(
-                    payable(
-                        deployCode(
-                            _computeVaultPath(type(AggregatorCompositeLiquidityRouter).name),
-                            abi.encode(vault, routerVersion)
-                        )
-                    )
-                );
-        } else {
-            return new AggregatorCompositeLiquidityRouter(vault, routerVersion);
         }
     }
 
@@ -325,17 +304,6 @@ contract VaultContractsDeployer is BaseContractsDeployer {
                 );
         } else {
             return new RouterMock(vault, weth, permit2);
-        }
-    }
-
-    function deployAggregatorRouter(IVault vault, string memory version) internal returns (AggregatorRouter) {
-        if (reusingArtifacts) {
-            return
-                AggregatorRouter(
-                    payable(deployCode(_computeVaultPath(type(AggregatorRouter).name), abi.encode(vault, version)))
-                );
-        } else {
-            return new AggregatorRouter(vault, version);
         }
     }
 

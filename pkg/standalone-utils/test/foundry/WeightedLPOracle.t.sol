@@ -215,6 +215,38 @@ contract WeightedLPOracleTest is BaseVaultTest, WeightedPoolContractsDeployer {
         oracle.computeFeedTokenDecimalScalingFactor(feedWith20Decimals);
     }
 
+    function testLengthMismatchTVL() public {
+        (IWeightedPool pool, ) = createAndInitPool(2);
+        (WeightedLPOracleMock oracle, ) = deployOracle(pool);
+
+        int256[] memory prices = new int256[](1);
+
+        vm.expectRevert(InputHelpers.InputLengthMismatch.selector);
+        oracle.computeTVLGivenPrices(prices);
+    }
+
+    function testZeroPrice() public {
+        (IWeightedPool pool, ) = createAndInitPool(2);
+        (WeightedLPOracleMock oracle, ) = deployOracle(pool);
+
+        int256[] memory prices = new int256[](2);
+
+        vm.expectRevert(ILPOracleBase.InvalidOraclePrice.selector);
+        oracle.computeTVLGivenPrices(prices);
+    }
+
+    function testNegativePrice() public {
+        (IWeightedPool pool, ) = createAndInitPool(2);
+        (WeightedLPOracleMock oracle, ) = deployOracle(pool);
+
+        int256[] memory prices = new int256[](2);
+        prices[0] = 1e18;
+        prices[1] = -1e6;
+
+        vm.expectRevert(ILPOracleBase.InvalidOraclePrice.selector);
+        oracle.computeTVLGivenPrices(prices);
+    }
+
     /**
      * forge-config: default.fuzz.runs = 10
      * forge-config: intense.fuzz.runs = 50
@@ -296,15 +328,23 @@ contract WeightedLPOracleTest is BaseVaultTest, WeightedPoolContractsDeployer {
             FeedMock(address(feeds[i])).setLastRoundData(answers[i], updateTimestamps[i]);
         }
 
-        (int256[] memory returnedAnswers, uint256 returnedUpdateTimestamp) = oracle.getFeedData();
+        (int256[] memory returnedAnswers, uint256[] memory returnedTimestamps, uint256 returnedUpdateTimestamp) = oracle
+            .getFeedData();
         for (uint256 i = 0; i < totalTokens; i++) {
             assertEq(
                 uint256(returnedAnswers[i]),
                 answers[i] * oracle.getFeedTokenDecimalScalingFactors()[i],
                 "Answer does not match"
             );
+
+            assertEq(returnedTimestamps[i], updateTimestamps[i], "Timestamp does not match");
         }
         assertEq(returnedUpdateTimestamp, minUpdateTimestamp, "Update timestamp does not match");
+
+        uint256 tvl = oracle.computeTVL();
+        uint256 tvlWithPrices = oracle.computeTVLGivenPrices(returnedAnswers);
+
+        assertEq(tvl, tvlWithPrices, "Alternate TVL computations don't match");
     }
 
     function testCalculateTVL__Fuzz(
@@ -338,7 +378,7 @@ contract WeightedLPOracleTest is BaseVaultTest, WeightedPoolContractsDeployer {
         IWeightedPool pool = createAndInitPool(_tokens, poolInitAmounts, weights);
         (WeightedLPOracleMock oracle, ) = deployOracle(pool);
 
-        uint256 tvl = oracle.calculateTVL(prices);
+        uint256 tvl = oracle.computeTVLGivenPrices(prices);
 
         uint256[] memory lastBalancesLiveScaled18 = vault.getCurrentLiveBalances(address(pool));
 
@@ -348,7 +388,7 @@ contract WeightedLPOracleTest is BaseVaultTest, WeightedPoolContractsDeployer {
         }
         expectedTVL = expectedTVL.mulDown(pool.computeInvariant(lastBalancesLiveScaled18, Rounding.ROUND_UP));
 
-        assertEq(tvl, expectedTVL, "TVL does not match");
+        assertEq(tvl, expectedTVL, "TVL (with prices) does not match");
     }
 
     function testCalculateTVLAfterSwap() public {
@@ -361,14 +401,14 @@ contract WeightedLPOracleTest is BaseVaultTest, WeightedPoolContractsDeployer {
         (WeightedLPOracleMock oracle, ) = deployOracle(pool);
         int256[] memory prices = [int256(1e18), int256(1e18)].toMemoryArray();
 
-        uint256 tvlBefore = oracle.calculateTVL(prices);
+        uint256 tvlBefore = oracle.computeTVLGivenPrices(prices);
 
         uint256 swapAmount = poolInitAmount / 10;
 
         vm.prank(lp);
         router.swapSingleTokenExactIn(address(pool), dai, usdc, swapAmount, 0, MAX_UINT256, false, bytes(""));
 
-        uint256 tvlAfter = oracle.calculateTVL(prices);
+        uint256 tvlAfter = oracle.computeTVLGivenPrices(prices);
 
         assertApproxEqAbs(tvlAfter, tvlBefore, 1e3, "TVL should not change after swap");
     }
@@ -393,14 +433,14 @@ contract WeightedLPOracleTest is BaseVaultTest, WeightedPoolContractsDeployer {
         (WeightedLPOracleMock oracle, ) = deployOracle(pool);
         int256[] memory prices = [int256(1e18), int256(1e18)].toMemoryArray();
 
-        uint256 tvlBefore = oracle.calculateTVL(prices);
+        uint256 tvlBefore = oracle.computeTVLGivenPrices(prices);
 
         uint256 swapAmount = poolInitAmount / 10;
 
         vm.prank(lp);
         router.swapSingleTokenExactIn(address(pool), dai, usdc, swapAmount, 0, MAX_UINT256, false, bytes(""));
 
-        uint256 tvlAfter = oracle.calculateTVL(prices);
+        uint256 tvlAfter = oracle.computeTVLGivenPrices(prices);
 
         assertApproxEqAbs(tvlAfter, tvlBefore, 1e3, "TVL should not change after swap");
     }

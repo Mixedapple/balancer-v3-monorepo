@@ -24,10 +24,7 @@ contract Router is IRouter, RouterQueries {
         IWETH weth,
         IPermit2 permit2,
         string memory routerVersion
-    )
-        // This is router with permit2, that's why we pass `false` for isAggregator
-        RouterQueries(vault, weth, permit2, false, routerVersion)
-    {
+    ) RouterQueries(vault, weth, permit2, routerVersion) {
         // solhint-disable-previous-line no-empty-blocks
     }
 

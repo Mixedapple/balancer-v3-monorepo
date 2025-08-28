@@ -16,7 +16,7 @@ import { FixedPoint } from "@balancer-labs/v3-solidity-utils/contracts/math/Fixe
 
 /**
  * @notice Base contract for pool oracles.
- * @dev The most important function of this contract is `calculateTVL`. This function must be implemented by each
+ * @dev The most important function of this contract is `computeTVL`. This function must be implemented by each
  * oracle that inherits this contract, and it must return the total value locked (TVL) of the pool. The rest of
  * this contract are standard functions that makes the oracle compatible with Chainlink's AggregatorV3Interface.
  */
@@ -159,9 +159,9 @@ abstract contract LPOracleBase is ILPOracleBase, AggregatorV3Interface {
         view
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (int256[] memory prices, uint256 _updatedAt) = getFeedData();
+        (int256[] memory prices, , uint256 _updatedAt) = getFeedData();
 
-        uint256 tvl = calculateTVL(prices);
+        uint256 tvl = _computeTVL(prices);
         uint256 totalSupply = _vault.totalSupply(address(pool));
 
         uint256 lpPrice = tvl.divUp(totalSupply);
@@ -170,22 +170,43 @@ abstract contract LPOracleBase is ILPOracleBase, AggregatorV3Interface {
     }
 
     /// @inheritdoc ILPOracleBase
-    function calculateTVL(int256[] memory) public view virtual returns (uint256);
+    function computeTVL() public view returns (uint256) {
+        (int256[] memory prices, , ) = getFeedData();
+
+        return _computeTVL(prices);
+    }
 
     /// @inheritdoc ILPOracleBase
-    function getFeedData() public view returns (int256[] memory prices, uint256 updatedAt) {
+    function computeTVLGivenPrices(int256[] memory prices) public view virtual returns (uint256) {
+        // This can be called by external users, so we need length validation.
+        InputHelpers.ensureInputLengthMatch(prices.length, _totalTokens);
+
+        return _computeTVL(prices);
+    }
+
+    /// @inheritdoc ILPOracleBase
+    function getFeedData()
+        public
+        view
+        returns (int256[] memory prices, uint256[] memory updatedAt, uint256 minUpdatedAt)
+    {
         uint256 totalTokens = _totalTokens;
         AggregatorV3Interface[] memory feeds = _getFeeds(totalTokens);
         uint256[] memory feedDecimalScalingFactors = _getFeedTokenDecimalScalingFactors(totalTokens);
 
         prices = new int256[](totalTokens);
+        updatedAt = new uint256[](totalTokens);
 
-        updatedAt = type(uint256).max;
+        minUpdatedAt = type(uint256).max;
+
         for (uint256 i = 0; i < totalTokens; i++) {
             (, int256 answer, , uint256 feedUpdatedAt, ) = feeds[i].latestRoundData();
             prices[i] = answer * feedDecimalScalingFactors[i].toInt256();
+            updatedAt[i] = feedUpdatedAt;
 
-            updatedAt = updatedAt < feedUpdatedAt ? updatedAt : feedUpdatedAt;
+            if (feedUpdatedAt < minUpdatedAt) {
+                minUpdatedAt = feedUpdatedAt;
+            }
         }
     }
 
@@ -254,4 +275,15 @@ abstract contract LPOracleBase is ILPOracleBase, AggregatorV3Interface {
 
         return feedTokenDecimalScalingFactors;
     }
+
+    /**
+     * @notice Internal version of TVL computation, which must be implemented for each oracle type.
+     * @dev The prices given do not come from the user, so we know the length is correct. Derived contracts should
+     * accordingly never pass a user-provided price array directly to this function without length validation.
+     * Note that it's still possible for price feeds to malfunction, so the price values still need validation.
+     *
+     * @param prices A length-checked array of prices from the feeds, sorted in token registration order
+     * @return tvl TVL (total value locked) calculated from the prices and other pool data
+     */
+    function _computeTVL(int256[] memory prices) internal view virtual returns (uint256);
 }

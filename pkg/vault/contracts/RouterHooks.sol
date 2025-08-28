@@ -27,16 +27,13 @@ abstract contract RouterHooks is RouterCommon {
      */
     error InsufficientPayment(IERC20 token);
 
-    bool internal immutable _isAggregator;
-
     constructor(
         IVault vault,
         IWETH weth,
         IPermit2 permit2,
-        bool isAggregator,
         string memory routerVersion
     ) RouterCommon(vault, weth, permit2, routerVersion) {
-        _isAggregator = isAggregator;
+        // solhint-disable-previous-line no-empty-blocks
     }
 
     /***************************************************************************
@@ -121,7 +118,9 @@ abstract contract RouterHooks is RouterCommon {
                 continue;
             }
 
-            if (_isAggregator) {
+            if (_isPrepaid == false || (params.wethIsEth && token == _weth)) {
+                _takeTokenIn(params.sender, token, amountIn, params.wethIsEth);
+            } else {
                 // `amountInHint` represents the amount supposedly paid upfront by the sender.
                 uint256 amountInHint = params.maxAmountsIn[i];
 
@@ -131,8 +130,6 @@ abstract contract RouterHooks is RouterCommon {
                 }
 
                 _sendTokenOut(params.sender, token, tokenInCredit - amountIn, false);
-            } else {
-                _takeTokenIn(params.sender, token, amountIn, params.wethIsEth);
             }
         }
 
@@ -335,7 +332,7 @@ abstract contract RouterHooks is RouterCommon {
 
         (uint256 amountCalculated, uint256 amountIn, uint256 amountOut) = _swapHook(params);
 
-        if (_isAggregator == false) {
+        if (_isPrepaid == false || (params.wethIsEth && params.tokenIn == _weth)) {
             _takeTokenIn(params.sender, params.tokenIn, amountIn, params.wethIsEth);
         } else {
             // `amountInHint` represents the amount supposedly paid upfront by the sender.

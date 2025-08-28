@@ -18,9 +18,7 @@ import { StableMath } from "@balancer-labs/v3-solidity-utils/contracts/math/Stab
 
 import { LPOracleBase } from "./LPOracleBase.sol";
 
-/**
- * @notice Oracle for stable pools.
- */
+/// @notice Oracle for stable pools.
 contract StableLPOracle is LPOracleBase {
     using FixedPoint for uint256;
     using SafeCast for *;
@@ -40,15 +38,21 @@ contract StableLPOracle is LPOracleBase {
         // solhint-disable-previous-line no-empty-blocks
     }
 
-    /// @inheritdoc ILPOracleBase
-    function calculateTVL(int256[] memory prices) public view override returns (uint256 tvl) {
-        (, , , uint256[] memory lastBalancesLiveScaled18) = _vault.getPoolTokenInfo(address(pool));
-        InputHelpers.ensureInputLengthMatch(prices.length, lastBalancesLiveScaled18.length);
+    /// @inheritdoc LPOracleBase
+    function _computeTVL(int256[] memory prices) internal view override returns (uint256 tvl) {
+        // `computeInvariant` and `_computeMarketPriceBalances` fail with invalid prices, so we unfortunately cannot
+        // defer this check until the final tvl calculation loop.
+        for (uint256 i = 0; i < _totalTokens; i++) {
+            if (prices[i] <= 0) {
+                revert InvalidOraclePrice();
+            }
+        }
 
         // The TVL of the stable pool is computed by calculating the balances for the stable pool that would represent
         // the given price vector. To compute these balances, we need only the amplification parameter of the pool,
         // the invariant and the price vector.
 
+        (, , , uint256[] memory lastBalancesLiveScaled18) = _vault.getPoolTokenInfo(address(pool));
         uint256 invariant = pool.computeInvariant(lastBalancesLiveScaled18, Rounding.ROUND_DOWN);
 
         uint256[] memory marketPriceBalancesScaled18 = _computeMarketPriceBalances(invariant, prices);
@@ -146,7 +150,7 @@ contract StableLPOracle is LPOracleBase {
     function _findInitialGuessForK(int256 a, int256 b, int256[] memory prices) internal view returns (int256 k) {
         // The initial guess for K is important, since f(k) has many roots that return negative balances. We need to
         // choose a guess where the function is convex.
-        // The best initial guess for K is `k = a * min([(1 + 1/(1 + b)), (2 - b/a)]) / min(price)`.
+        // The best initial guess for K is `k = a * (1 + 1/(1 + b)) / min(price)`.
 
         int256 minPrice = prices[0];
         for (uint256 i = 1; i < _totalTokens; i++) {
@@ -156,9 +160,8 @@ contract StableLPOracle is LPOracleBase {
         }
 
         int256 term1 = _POSITIVE_ONE_INT + _divDownInt(_POSITIVE_ONE_INT, (_POSITIVE_ONE_INT + b));
-        int256 term2 = 2 * _POSITIVE_ONE_INT - _divDownInt(b, a);
 
-        return (a * SignedMath.min(term1, term2)) / minPrice;
+        return (a * term1) / minPrice;
     }
 
     function _computeKParams(
